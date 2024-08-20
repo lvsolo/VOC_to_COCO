@@ -14,22 +14,13 @@ You only need to set the following three parts
 3.voc_annotations : path to your VOC dataset Annotations
  
 """
-val_files_num = 100
-test_files_num = 100
-voc_annotations = '././VOC/Annotations/'  #remember to modify the path
+voc_annotations = '/project/mmdetection/data/3718/'  #remember to modify the path
+num_all = len(os.listdir(voc_annotations))//2
+val_files_num = num_all *1 // 10
+test_files_num = num_all *1 // 10
 
-split = voc_annotations.split('/')
-coco_name = split[-3]
-del split[-3]
-del split[-2]
-del split[-1]
-del split[0]
-# print(split)
-main_path = ''
-for i in split:
-    main_path += '/' + i
-
-main_path = main_path + '/'
+coco_name = 'openset'
+main_path = './coco/'
 
 # print(main_path)
 
@@ -40,7 +31,7 @@ xml_val = os.path.join(main_path, 'xml', 'xml_val/')
 xml_test = os.path.join(main_path, 'xml/', 'xml_test/')
 xml_train = os.path.join(main_path, 'xml/', 'xml_train/')
 
-voc_images = os.path.join(main_path, coco_name, 'JPEGImages/')
+voc_images = voc_annotations#'/project/mmdetection/data/3718/'#os.path.join(main_path, coco_name, 'JPEGImages/')
 
 
 
@@ -72,11 +63,15 @@ mkdir(xml_train)
 
 #voc images copy to coco images
 for i in os.listdir(voc_images):
+    if i.endswith('.xml') or (not (i.endswith('.jpg') or i.endswith('.png'))):
+        continue
     img_path = os.path.join(voc_images + i)
     shutil.copy(img_path, coco_images)
 
-    # voc images copy to coco images
+# voc images copy to coco images
 for i in os.listdir(voc_annotations):
+    if not i.endswith('.xml'):
+        continue
     img_path = os.path.join(voc_annotations + i)
     shutil.copy(img_path, xml_train)
 
@@ -90,11 +85,11 @@ for i in range(val_files_num):
         source_file = "%s/%s" % (xml_train, random_file)
 
         if random_file not in os.listdir(xml_val):
-            shutil.move(source_file, xml_val)
+            shutil.copy(source_file, xml_val)
         else:
             random_file = random.choice(os.listdir(xml_train))
             source_file = "%s/%s" % (xml_train, random_file)
-            shutil.move(source_file, xml_val)
+            shutil.copy(source_file, xml_val)
     else:
         print('The folders are empty, please make sure there are enough %d file to move' % (val_files_num))
         break
@@ -107,11 +102,11 @@ for i in range(test_files_num):
         source_file = "%s/%s" % (xml_train, random_file)
 
         if random_file not in os.listdir(xml_test):
-            shutil.move(source_file, xml_test)
+            shutil.copy(source_file, xml_test)
         else:
             random_file = random.choice(os.listdir(xml_train))
             source_file = "%s/%s" % (xml_train, random_file)
-            shutil.move(source_file, xml_test)
+            shutil.copy(source_file, xml_test)
     else:
         print('The folders are empty, please make sure there are enough %d file to move' % (val_files_num))
         break
@@ -189,6 +184,19 @@ def get_categories(xml_files):
 
 
 def convert(xml_files, json_file):
+    filenames = []
+    for xml_file in xml_files:
+        tree = ET.parse(xml_file)
+        root = tree.getroot()
+        path = get(root, "path")
+        if len(path) == 1:
+            filename = os.path.basename(path[0].text)
+        elif len(path) == 0:
+            filename = get_and_check(root, "filename", 1).text
+        else:
+            raise ValueError("%d paths found in %s" % (len(path), xml_file))
+        filenames.append(filename)
+
     json_dict = {"images": [], "type": "instances", "annotations": [], "categories": []}
     if PRE_DEFINE_CATEGORIES is not None:
         categories = PRE_DEFINE_CATEGORIES
@@ -206,7 +214,8 @@ def convert(xml_files, json_file):
         else:
             raise ValueError("%d paths found in %s" % (len(path), xml_file))
         ## The filename must be a number
-        image_id = get_filename_as_int(filename)
+        #image_id = get_filename_as_int(filename)
+        image_id = filenames.index(filename)+1
         size = get_and_check(root, "size", 1)
         width = int(get_and_check(size, "width", 1).text)
         height = int(get_and_check(size, "height", 1).text)
@@ -227,10 +236,10 @@ def convert(xml_files, json_file):
                 categories[category] = new_id
             category_id = categories[category]
             bndbox = get_and_check(obj, "bndbox", 1)
-            xmin = int(get_and_check(bndbox, "xmin", 1).text) - 1
-            ymin = int(get_and_check(bndbox, "ymin", 1).text) - 1
-            xmax = int(get_and_check(bndbox, "xmax", 1).text)
-            ymax = int(get_and_check(bndbox, "ymax", 1).text)
+            xmin = int(float(get_and_check(bndbox, "xmin", 1).text)) - 1
+            ymin = int(float(get_and_check(bndbox, "ymin", 1).text)) - 1
+            xmax = int(float(get_and_check(bndbox, "xmax", 1).text))
+            ymax = int(float(get_and_check(bndbox, "ymax", 1).text))
             assert xmax > xmin
             assert ymax > ymin
             o_width = abs(xmax - xmin)
@@ -263,6 +272,6 @@ xml_val_files = glob.glob(os.path.join(xml_val, "*.xml"))
 xml_test_files = glob.glob(os.path.join(xml_test, "*.xml"))
 xml_train_files = glob.glob(os.path.join(xml_train, "*.xml"))
 
-convert(xml_val_files, coco_json_annotations + 'val2017.json')
-convert(xml_test_files, coco_json_annotations+'test2017.json')
-convert(xml_train_files, coco_json_annotations + 'train2017.json')
+convert(xml_val_files, coco_json_annotations + 'val.json')
+convert(xml_test_files, coco_json_annotations+'test.json')
+convert(xml_train_files, coco_json_annotations + 'train.json')
